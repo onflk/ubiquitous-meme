@@ -295,8 +295,8 @@
 <div id="api-status-bar">
   <div class="api-status-pills">
     <span style="font-size:.65rem;color:var(--text-faint);letter-spacing:.1em;font-weight:700;margin-right:.2rem">API STATUS</span>
-    <div class="api-pill checking" id="pill-tvmaze"><div class="api-dot checking" id="dot-tvmaze"></div><span>TMDB TV</span></div>
-    <div class="api-pill na"       id="pill-tmdb">  <div class="api-dot na"       id="dot-tmdb"></div>  <span>OMDb</span></div>
+    <div class="api-pill checking" id="pill-tvmaze"><div class="api-dot checking" id="dot-tvmaze"></div><span>TVmaze</span></div>
+    <div class="api-pill na"       id="pill-tmdb">  <div class="api-dot na"       id="dot-tmdb"></div>  <span>TMDB</span></div>
     <div class="api-pill checking" id="pill-archive"><div class="api-dot checking" id="dot-archive"></div><span id="video-source-label">Video Source</span></div>
   </div>
   <button id="api-status-close" onclick="toggleStatusBar()">✕</button>
@@ -316,11 +316,11 @@
     <div class="hero-overlay" id="movies-hero-overlay" style="background:linear-gradient(to bottom,rgba(8,15,10,.2) 0%,rgba(8,15,10,.65) 65%,var(--bg) 100%)"></div>
     <div class="topbar">
       <div class="logo">🎞 Film Vault</div>
-      <button id="tmdb-toggle-btn" class="btn-outline btn-sm">Connect OMDb</button>
+      <button id="tmdb-toggle-btn" class="btn-outline btn-sm">Connect TMDB</button>
     </div>
     <div id="tmdb-panel">
       <div class="tmdb-box">
-        <p>Paste your free OMDb API key to unlock real movies + search. Get one free at <a href='https://www.omdbapi.com/apikey.aspx' target='_blank' style='color:var(--green)'>omdbapi.com</a></p>
+        <p>Your TMDB key is pre-loaded. You can update it here if needed.</p>
         <div class="tmdb-row">
           <input id="tmdb-key-input" class="tmdb-input" type="text" placeholder="Your API key..." />
           <button id="tmdb-key-go" class="btn-green">Go</button>
@@ -665,7 +665,7 @@ document.getElementById('tmdb-key-go').addEventListener('click', () => {
   if (!key) return;
   state.omdbKey = key;
   document.getElementById('tmdb-panel').classList.remove('visible');
-  document.getElementById('tmdb-toggle-btn').textContent = '✓ OMDb on';
+  document.getElementById('tmdb-toggle-btn').textContent = '✓ TMDB on';
   document.getElementById('tmdb-toggle-btn').style.color = 'var(--green)';
   document.getElementById('tmdb-toggle-btn').style.borderColor = 'rgba(74,180,100,.3)';
   document.getElementById('movies-search').disabled = false;
@@ -678,62 +678,66 @@ document.getElementById('tmdb-key-input').addEventListener('keydown', e => {
 });
 
 // ════════════════════════════════════════════════════════════════
-//  MOVIES — DATA
+//  MOVIES — DATA  (all powered by TMDB)
 // ════════════════════════════════════════════════════════════════
-// ── OMDb data normaliser ─────────────────────────────────────────
-// Converts OMDb response shape to the internal movie shape Film Vault uses
-let _omdbIdCounter = 9000;
-function omdbToMovie(d) {
-  _omdbIdCounter++;
-  const rating = parseFloat(d.imdbRating) || 0;
-  const genres = d.Genre ? d.Genre.split(', ') : [];
-  const genreMap = {'Action':28,'Comedy':35,'Horror':27,'Sci-Fi':878,'Drama':18,'Romance':10749,'Thriller':53,'Adventure':12};
-  const genre_ids = genres.map(g => genreMap[g]).filter(Boolean);
+
+// Convert a raw TMDB movie object to Film Vault's internal shape
+function tmdbMovie(d) {
   return {
-    id: d.imdbID || _omdbIdCounter,
-    title: d.Title,
-    release_date: d.Released !== 'N/A' ? d.Released : (d.Year + '-01-01'),
-    vote_average: rating,
-    overview: d.Plot !== 'N/A' ? d.Plot : '',
-    poster_path: d.Poster !== 'N/A' ? d.Poster : null,
-    backdrop_path: d.Poster !== 'N/A' ? d.Poster : null, // OMDb has no backdrop, reuse poster
-    genre_ids: genre_ids,
-    imdb_id: d.imdbID,
-    archive_id: null,
+    id:           String(d.id),
+    title:        d.title || d.name || 'Untitled',
+    release_date: d.release_date || d.first_air_date || '',
+    vote_average: d.vote_average || 0,
+    overview:     d.overview || '',
+    poster_path:  d.poster_path   ? `https://image.tmdb.org/t/p/w500${d.poster_path}`   : null,
+    backdrop_path:d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null,
+    genre_ids:    d.genre_ids || [],
+    imdb_id:      d.imdb_id || null,   // filled later by detail fetch
+    archive_id:   null,
+    tmdb_id:      d.id,
   };
 }
-function omdbSearchToMovie(d) {
-  _omdbIdCounter++;
-  return {
-    id: d.imdbID || _omdbIdCounter,
-    title: d.Title,
-    release_date: d.Year + '-01-01',
-    vote_average: 0,
-    overview: '',
-    poster_path: d.Poster !== 'N/A' ? d.Poster : null,
-    backdrop_path: d.Poster !== 'N/A' ? d.Poster : null,
-    genre_ids: [],
-    imdb_id: d.imdbID,
-    archive_id: null,
-  };
+
+// Fetch IMDb ID for a movie (needed for embed sources) — called lazily
+async function fetchImdbId(tmdbId) {
+  try {
+    const r = await fetch(`${TMDB_BASE}/movie/${tmdbId}/external_ids?api_key=${TMDB_KEY}`);
+    const d = await r.json();
+    return d.imdb_id || null;
+  } catch { return null; }
 }
 
 async function loadPopularMovies() {
   showMoviesSpin(true);
   try {
-    // OMDb doesn't have a "popular" endpoint, so we seed with top IMDb titles
-    const popularTitles = ['Inception','The Dark Knight','Interstellar','Pulp Fiction','The Matrix','Forrest Gump','Goodfellas','Fight Club','The Godfather','Parasite','Joker','Avengers Endgame','The Shawshank Redemption','Oppenheimer','Dune'];
-    const results = await Promise.all(
-      popularTitles.slice(0,12).map(t =>
-        fetch(`${OMDB_BASE}/?apikey=${state.omdbKey}&t=${encodeURIComponent(t)}&type=movie`)
-          .then(r => r.json())
-          .then(d => d.Response === 'True' ? omdbToMovie(d) : null)
-          .catch(() => null)
-      )
-    );
-    const movies = results.filter(Boolean);
-    if (movies.length) { state.movies = movies; renderMovies(); }
-  } catch {}
+    // Use TMDB trending/all/day for a great mixed popular list
+    const [trendRes, popRes, topRes] = await Promise.all([
+      fetch(`${TMDB_BASE}/trending/all/day?api_key=${TMDB_KEY}`).then(r=>r.json()),
+      fetch(`${TMDB_BASE}/movie/popular?api_key=${TMDB_KEY}`).then(r=>r.json()),
+      fetch(`${TMDB_BASE}/movie/top_rated?api_key=${TMDB_KEY}`).then(r=>r.json()),
+    ]);
+    // Mix trending movies + popular + top rated, deduplicate
+    const seen = new Set();
+    const movies = [];
+    const all = [
+      ...(trendRes.results||[]).filter(d=>d.media_type==='movie'||d.title),
+      ...(popRes.results||[]),
+      ...(topRes.results||[]),
+    ];
+    for (const d of all) {
+      if (!d.title && !d.name) continue;
+      if (seen.has(d.id)) continue;
+      seen.add(d.id);
+      movies.push(tmdbMovie(d));
+      if (movies.length >= 20) break;
+    }
+    if (movies.length) {
+      state.movies = movies;
+      state.movieCache = state.movieCache || {};
+      movies.forEach(m => { state.movieCache[m.id] = m; });
+      renderMovies();
+    }
+  } catch(e) { console.error('loadPopularMovies', e); }
   showMoviesSpin(false);
 }
 
@@ -742,53 +746,66 @@ async function searchMovies(q) {
   showMoviesSpin(true);
   const dd = document.getElementById('movies-search-dropdown');
   try {
-    // Use TMDB search for better results
-    const res = await fetch(`${TMDB_BASE}/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&include_adult=false`);
+    // /search/multi searches movies, TV shows & people all at once
+    const res = await fetch(`${TMDB_BASE}/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&include_adult=false`);
     const data = await res.json();
-    const results = (data.results || []).slice(0, 10);
+    const results = (data.results || [])
+      .filter(d => d.media_type === 'movie' || d.media_type === 'tv')
+      .slice(0, 12);
+
     state.movieCache = state.movieCache || {};
+    state.showCache  = state.showCache  || {};
+
     if (results.length) {
-      const movies = results.map(d => {
-        const m = {
-          id: String(d.id),
-          title: d.title,
-          release_date: d.release_date || '',
-          vote_average: d.vote_average || 0,
-          overview: d.overview || '',
-          poster_path: d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
-          backdrop_path: d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null,
-          genre_ids: d.genre_ids || [],
-          imdb_id: null,
-          archive_id: null,
-        };
-        state.movieCache[m.id] = m;
-        return m;
+      const items = results.map(d => {
+        if (d.media_type === 'movie') {
+          const m = tmdbMovie(d);
+          state.movieCache[m.id] = m;
+          return { ...m, _type: 'movie' };
+        } else {
+          const s = tmdbShowToState(d);
+          state.showCache[s.id] = s;
+          return { ...s, _type: 'show' };
+        }
       });
-      renderDropdown(dd, movies);
+      renderDropdown(dd, items);
     } else {
       dd.innerHTML = '<div class="search-drop-empty">no results found</div>';
       dd.classList.add('open');
     }
-  } catch (e) {
+  } catch(e) {
     dd.innerHTML = '<div class="search-drop-empty">search failed — try again</div>';
     dd.classList.add('open');
   }
   showMoviesSpin(false);
 }
 
-function renderDropdown(dd, movies) {
-  dd.innerHTML = movies.map(m => {
-    const year = m.release_date?.split('-')[0] || '';
-    const thumb = m.poster_path
-      ? `<img class="search-drop-thumb" src="${m.poster_path.replace('w500','w92')}" alt="">`
-      : `<div class="search-drop-thumb placeholder-thumb">${m.title[0]}</div>`;
-    return `<div class="search-drop-item" onclick="pickSearchMovie('${m.id}')">
+function renderDropdown(dd, items) {
+  dd.innerHTML = items.map(item => {
+    const isShow = item._type === 'show';
+    const title  = item.title || item.name || '';
+    const year   = (item.release_date || item.premiered || '').split('-')[0] || '';
+    const poster = item.poster_path || item.image?.medium || item.image?.original;
+    const thumb  = poster
+      ? `<img class="search-drop-thumb" src="${poster.includes('tmdb')||poster.startsWith('http') ? poster.replace('w500','w92').replace('w185','w92') : poster}" alt="">`
+      : `<div class="search-drop-thumb placeholder-thumb">${title[0]||'?'}</div>`;
+    const badge  = isShow
+      ? `<span style="font-size:.6rem;background:rgba(74,180,100,.15);color:var(--green);border:1px solid rgba(74,180,100,.3);padding:.1rem .35rem;border-radius:3px;margin-left:.3rem">TV</span>`
+      : `<span style="font-size:.6rem;background:rgba(255,255,255,.06);color:var(--text-faint);border:1px solid rgba(255,255,255,.08);padding:.1rem .35rem;border-radius:3px;margin-left:.3rem">FILM</span>`;
+    const watchAction = isShow
+      ? `openShowModal('${item.id}')`
+      : `openPlayerById('${item.id}')`;
+    const rowAction = isShow
+      ? `pickSearchShow('${item.id}')`
+      : `pickSearchMovie('${item.id}')`;
+    const rating = item.vote_average || item.rating?.average || 0;
+    return `<div class="search-drop-item" onclick="${rowAction}">
       ${thumb}
       <div class="search-drop-info">
-        <div class="search-drop-title">${m.title}</div>
-        <div class="search-drop-meta">${year}${m.vote_average > 0 ? ' · ★ ' + m.vote_average.toFixed(1) : ''}</div>
+        <div class="search-drop-title">${title}${badge}</div>
+        <div class="search-drop-meta">${year}${rating > 0 ? ' · ★ ' + Number(rating).toFixed(1) : ''}</div>
       </div>
-      <button class="search-drop-watch" onclick="event.stopPropagation();openPlayerById('${m.id}')">▶ Watch</button>
+      <button class="search-drop-watch" onclick="event.stopPropagation();${watchAction}">▶ Watch</button>
     </div>`;
   }).join('');
   dd.classList.add('open');
@@ -923,7 +940,7 @@ function detailPanelHTML(m, allMovies) {
     <div class="detail-body">
       <p class="detail-overview">${m.overview || 'No description available.'}</p>
       <div class="detail-actions">
-        <button class="btn-green" onclick="openPlayerById('${mid}')">▶ Watch now</button>
+        <button class="btn-green" onclick="openMovieWithImdb('${mid}')">▶ Watch now</button>
         <button class="btn-outline${saved?' saved':''}" id="detail-wl-${mid}" onclick="toggleMovieWLById('${mid}');renderMovies()">${saved?'✓ Saved':'+ Watch Later'}</button>
       </div>
       ${recs.length ? `<div class="recs-label">YOU MAY LIKE</div><div class="recs-row">${recsHTML}</div>` : ''}
@@ -1023,6 +1040,17 @@ function openPlayerById(id) {
   if (movie) openPlayer(movie);
 }
 
+async function openMovieWithImdb(id) {
+  const movie = (state.movieCache || {})[String(id)] || state.movies.find(m => String(m.id) === String(id));
+  if (!movie) return;
+  // Fetch IMDb ID if we don't have it yet (needed for 2embed/vidsrc)
+  if (!movie.imdb_id && movie.tmdb_id) {
+    movie.imdb_id = await fetchImdbId(movie.tmdb_id);
+    if (state.movieCache) state.movieCache[String(id)] = movie;
+  }
+  openPlayer(movie);
+}
+
 // ════════════════════════════════════════════════════════════════
 //  CONTINUE WATCHING
 // ════════════════════════════════════════════════════════════════
@@ -1051,24 +1079,22 @@ function updateProgress(movieId, pct) {
 // ════════════════════════════════════════════════════════════════
 //  TV SHOWS
 // ════════════════════════════════════════════════════════════════
-function tmdbShowToState(d) {
+// Convert TVmaze show to internal shape
+function tvmazeShow(d) {
   return {
-    id: String(d.id),
-    name: d.name,
-    premiered: d.first_air_date || '',
-    status: d.status || '',
-    genres: (d.genres || []).map(g => g.name),
-    genre_ids: (d.genre_ids || []),
-    rating: { average: d.vote_average || null },
-    summary: d.overview ? `<p>${d.overview}</p>` : '',
-    image: d.poster_path ? {
-      medium: `https://image.tmdb.org/t/p/w185${d.poster_path}`,
-      original: `https://image.tmdb.org/t/p/w780${d.poster_path}`
-    } : null,
-    backdrop: d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null,
-    externals: { imdb: d.external_ids?.imdb_id || null },
-    tmdb_id: d.id,
-    type: 'show',
+    id:        String(d.id),
+    name:      d.name || '',
+    premiered: d.premiered || '',
+    status:    d.status || '',
+    genres:    d.genres || [],
+    genre_ids: [],
+    rating:    { average: d.rating?.average || null },
+    summary:   d.summary || '',
+    image:     d.image || null,
+    externals: d.externals || {},
+    tvmaze_id: d.id,
+    tmdb_id:   null,
+    type:      'show',
   };
 }
 
@@ -1077,18 +1103,18 @@ async function loadShows(q) {
   const dd = document.getElementById('shows-search-dropdown');
   try {
     if (q) {
-      // Search dropdown
-      const res = await fetch(`${TMDB_BASE}/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}`);
+      // TVmaze search
+      const res = await fetch(`${TVMAZE}/search/shows?q=${encodeURIComponent(q)}`);
       const data = await res.json();
-      const results = (data.results || []).slice(0, 10).map(tmdbShowToState);
+      const results = data.map(r => tvmazeShow(r.show));
       state.showCache = state.showCache || {};
       results.forEach(s => { state.showCache[s.id] = s; });
-      renderShowDropdown(dd, results);
+      renderShowDropdown(dd, results.slice(0,10));
     } else {
-      // Popular shows for grid
-      const res = await fetch(`${TMDB_BASE}/tv/popular?api_key=${TMDB_KEY}`);
+      // TVmaze popular/schedule
+      const res = await fetch(`${TVMAZE}/shows?page=0`);
       const data = await res.json();
-      state.shows = (data.results || []).slice(0, 20).map(tmdbShowToState);
+      state.shows = data.slice(0,20).map(tvmazeShow);
       state.showCache = state.showCache || {};
       state.shows.forEach(s => { state.showCache[s.id] = s; });
       dd.classList.remove('open');
@@ -1231,35 +1257,24 @@ async function openShowModal(id) {
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
-  // load episodes via TMDB
+  // load episodes via TVmaze
   document.getElementById('show-ep-loading').style.display = 'flex';
   document.getElementById('show-episode-list').innerHTML = '';
   document.getElementById('show-season-btns').innerHTML = '';
   try {
-    // First get number of seasons
-    const detailRes = await fetch(`${TMDB_BASE}/tv/${show.tmdb_id || show.id}?api_key=${TMDB_KEY}`);
-    const detail = await detailRes.json();
-    const numSeasons = detail.number_of_seasons || 1;
-    // Update show with more detail
-    if (detail.external_ids) show.externals = { imdb: detail.external_ids.imdb_id };
-    // Fetch season 1 by default
-    const seasonRes = await fetch(`${TMDB_BASE}/tv/${show.tmdb_id || show.id}/season/1?api_key=${TMDB_KEY}`);
-    const seasonData = await seasonRes.json();
-    // Convert TMDB episodes to our shape + store season count
-    show._numSeasons = numSeasons;
-    show._seasonCache = { 1: seasonData.episodes || [] };
-    state.showEpisodes = (seasonData.episodes || []).map(ep => ({
-      id: ep.id,
-      name: ep.name,
-      number: ep.episode_number,
-      season: ep.season_number,
-      airdate: ep.air_date,
+    const res = await fetch(`${TVMAZE}/shows/${show.tvmaze_id || show.id}/episodes`);
+    const eps = await res.json();
+    state.showEpisodes = eps.map(ep => ({
+      id:      ep.id,
+      name:    ep.name,
+      number:  ep.number,
+      season:  ep.season,
+      airdate: ep.airdate,
       runtime: ep.runtime,
-      summary: ep.overview ? `<p>${ep.overview}</p>` : '',
-      image: ep.still_path ? { medium: `https://image.tmdb.org/t/p/w300${ep.still_path}` } : null,
+      summary: ep.summary || '',
+      image:   ep.image || null,
     }));
-    // Build season buttons from numSeasons
-    show._allSeasons = Array.from({length: numSeasons}, (_, i) => i + 1);
+    show._allSeasons = [...new Set(eps.map(e => e.season))].sort((a,b) => a-b);
     renderEpisodes();
   } catch(e) { console.error('Episode fetch error:', e); }
   document.getElementById('show-ep-loading').style.display = 'none';
@@ -1285,55 +1300,43 @@ function renderEpisodes() {
   renderEpisodeList();
 }
 
-async function selectSeason(s) {
+function selectSeason(s) {
   state.showSelectedSeason = s;
   document.querySelectorAll('.season-btn').forEach(b => b.classList.toggle('active', parseInt(b.textContent.slice(1)) === s));
-  const show = state.currentShowModal;
-  // Fetch season if not cached
-  if (show && !show._seasonCache?.[s]) {
-    document.getElementById('show-ep-loading').style.display = 'flex';
-    try {
-      const res = await fetch(`${TMDB_BASE}/tv/${show.tmdb_id || show.id}/season/${s}?api_key=${TMDB_KEY}`);
-      const data = await res.json();
-      show._seasonCache = show._seasonCache || {};
-      show._seasonCache[s] = (data.episodes || []).map(ep => ({
-        id: ep.id, name: ep.name, number: ep.episode_number,
-        season: ep.season_number, airdate: ep.air_date, runtime: ep.runtime,
-        summary: ep.overview ? `<p>${ep.overview}</p>` : '',
-        image: ep.still_path ? { medium: `https://image.tmdb.org/t/p/w300${ep.still_path}` } : null,
-      }));
-    } catch(e) { console.error(e); }
-    document.getElementById('show-ep-loading').style.display = 'none';
-  }
-  if (show?._seasonCache?.[s]) state.showEpisodes = show._seasonCache[s];
   renderEpisodeList();
 }
 
 function renderEpisodeList() {
   const filtered = state.showEpisodes.filter(e => e.season === state.showSelectedSeason);
   const show = state.currentShowModal;
+  // Store episodes in cache so we never pass JSON through onclick
+  state.epCache = state.epCache || {};
+  filtered.forEach(ep => {
+    const key = `${show?.id}-s${ep.season}e${ep.number}`;
+    state.epCache[key] = {
+      id:           key,
+      title:        `${show?.name || ''} — S${ep.season} E${ep.number}: ${ep.name}`,
+      overview:     ep.summary ? ep.summary.replace(/<[^>]*>/g,'') : '',
+      poster_path:  show?.image?.original || show?.image?.medium || null,
+      backdrop_path:show?.image?.original || null,
+      imdb_id:      show?.externals?.imdb || null,
+      tvmaze_id:    show?.tvmaze_id || show?.id || null,
+      season:       ep.season,
+      episode:      ep.number,
+      archive_id:   null,
+      genre_ids:    [],
+      vote_average: 0,
+      release_date: ep.airdate || '',
+      is_episode:   true,
+    };
+  });
+
   document.getElementById('show-episode-list').innerHTML = filtered.map(ep => {
     const summary = ep.summary ? ep.summary.replace(/<[^>]*>/g,'') : '';
+    const key = `${show?.id}-s${ep.season}e${ep.number}`;
     const thumb = ep.image?.medium
       ? `<img class="ep-thumb" src="${ep.image.medium}" alt="">`
       : `<div class="ep-thumb-placeholder">E${ep.number}</div>`;
-    // Build episode object for the player
-    const epObj = JSON.stringify({
-      id: `${show?.id}-s${ep.season}e${ep.number}`,
-      title: `${show?.name || ''} — S${ep.season} E${ep.number}: ${ep.name}`,
-      overview: summary,
-      poster_path: show?.image?.original || show?.image?.medium || null,
-      backdrop_path: show?.image?.original || null,
-      imdb_id: show?.externals?.imdb || null,
-      tvmaze_id: show?.id || null,
-      season: ep.season,
-      episode: ep.number,
-      archive_id: null,
-      genre_ids: [],
-      vote_average: 0,
-      release_date: ep.airdate || '',
-      is_episode: true,
-    }).replace(/"/g,'&quot;');
     return `<div class="ep-item">
       ${thumb}
       <div style="flex:1;min-width:0">
@@ -1343,7 +1346,7 @@ function renderEpisodeList() {
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.35rem;flex-shrink:0">
         ${ep.runtime ? `<div class="ep-runtime">${ep.runtime}m</div>` : ''}
-        <button class="ep-watch-btn" onclick="openEpisode(${epObj})">▶ Watch</button>
+        <button class="ep-watch-btn" onclick="openEpisodeByKey('${key}')">▶ Watch</button>
       </div>
     </div>`;
   }).join('');
@@ -1460,7 +1463,7 @@ function switchPlayerSource(src) {
   }
 }
 
-function loadMovieInPlayer(movie) {
+async function loadMovieInPlayer(movie) {
   const video   = document.getElementById('player-video');
   const loading = document.getElementById('player-loading');
   const error   = document.getElementById('player-error');
@@ -1468,25 +1471,39 @@ function loadMovieInPlayer(movie) {
   document.getElementById('player-iframe')?.remove();
   loading.style.display = 'flex'; error.style.display = 'none';
 
-  const src = SOURCES[activeSource];
-  // Need an IMDb ID for embed sources — try to get it
-  const imdbId = movie.imdb_id || movie.id;
+  // Fetch IMDb ID if we don't have it (2embed & vidsrc need tt-format IDs)
+  if (!movie.imdb_id && movie.tmdb_id) {
+    movie.imdb_id = await fetchImdbId(movie.tmdb_id);
+    if (state.movieCache) state.movieCache[String(movie.id)] = movie;
+  }
+
+  const src    = SOURCES[activeSource];
+  const imdbId = movie.imdb_id || null;
+
   if (src && imdbId) {
     const url = src.movie(imdbId);
     loading.style.display = 'none';
-    const wrap = document.querySelector('.player-video-wrap');
-    const iframe = document.createElement('iframe');
-    iframe.id = 'player-iframe';
-    iframe.src = url;
-    iframe.setAttribute('allowfullscreen', '');
-    iframe.setAttribute('allow', 'autoplay; fullscreen');
-    iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;';
-    wrap.appendChild(iframe);
+    injectIframe(url);
+  } else if (src && !imdbId && movie.tmdb_id) {
+    // Use TMDB id as fallback for some embed sources
+    const url = src.movie(movie.tmdb_id);
+    loading.style.display = 'none';
+    injectIframe(url);
   } else {
-    // Fallback: try archive
     loading.style.display = 'none';
     error.style.display = 'flex';
   }
+}
+
+function injectIframe(url) {
+  const wrap = document.querySelector('.player-video-wrap');
+  const iframe = document.createElement('iframe');
+  iframe.id = 'player-iframe';
+  iframe.src = url;
+  iframe.setAttribute('allowfullscreen', '');
+  iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
+  iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;';
+  wrap.appendChild(iframe);
 }
 
 function loadEpisodeInPlayer(ep) {
@@ -1497,22 +1514,17 @@ function loadEpisodeInPlayer(ep) {
   document.getElementById('player-iframe')?.remove();
   loading.style.display = 'flex'; error.style.display = 'none';
 
-  const src = SOURCES[activeSource];
+  const src    = SOURCES[activeSource];
   const imdbId = ep.imdb_id;
+
   if (src && imdbId) {
-    const url = src.tv(imdbId, ep.season, ep.episode);
     loading.style.display = 'none';
-    const wrap = document.querySelector('.player-video-wrap');
-    const iframe = document.createElement('iframe');
-    iframe.id = 'player-iframe';
-    iframe.src = url;
-    iframe.setAttribute('allowfullscreen', '');
-    iframe.setAttribute('allow', 'autoplay; fullscreen');
-    iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;';
-    wrap.appendChild(iframe);
+    injectIframe(src.tv(imdbId, ep.season, ep.episode));
   } else {
+    // No IMDb ID — show error with helpful message
     loading.style.display = 'none';
     error.style.display = 'flex';
+    console.warn('No IMDb ID for episode — embed source cannot load without it');
   }
 }
 
@@ -1540,9 +1552,10 @@ async function openPlayer(movie) {
 }
 
 // ── Open TV Episode ──────────────────────────────────────────────
-function openEpisode(ep) {
-  if (typeof ep === 'string') ep = JSON.parse(ep);
-  state.currentPlayer = { ...ep, is_episode: true };
+function openEpisodeByKey(key) {
+  const ep = (state.epCache || {})[key];
+  if (!ep) return;
+  state.currentPlayer = ep;
 
   const modal = document.getElementById('player-modal');
   modal.style.display = 'flex';
@@ -1551,11 +1564,10 @@ function openEpisode(ep) {
   document.getElementById('player-title').textContent = ep.title;
   document.getElementById('player-overview').textContent = ep.overview || '';
 
-  // Reset source picker
   document.querySelectorAll('.source-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`src-btn-${activeSource}`)?.classList.add('active');
 
-  loadEpisodeInPlayer(state.currentPlayer);
+  loadEpisodeInPlayer(ep);
 }
 
 function closePlayer() {
@@ -1594,7 +1606,7 @@ function startFeaturedRotation() {
 (function() {
   const key = state.omdbKey;
   if (key) {
-    document.getElementById('tmdb-toggle-btn').textContent = '✓ OMDb on';
+    document.getElementById('tmdb-toggle-btn').textContent = '✓ TMDB on';
     document.getElementById('tmdb-toggle-btn').style.color = 'var(--green)';
     document.getElementById('tmdb-toggle-btn').style.borderColor = 'rgba(74,180,100,.3)';
     document.getElementById('movies-search').disabled = false;
@@ -1673,9 +1685,9 @@ async function checkTMDB(key) {
   if (!key) { setPill('tmdb', 'na'); return; }
   setPill('tmdb', 'checking');
   try {
-    const res = await fetch(`https://www.omdbapi.com/?apikey=${key}&t=inception`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${TMDB_BASE}/configuration?api_key=${key}`, { signal: AbortSignal.timeout(5000) });
     const data = await res.json();
-    setPill('tmdb', data.Response === 'True' ? 'ok' : 'error');
+    setPill('tmdb', data.images ? 'ok' : 'error');
   } catch { setPill('tmdb', 'error'); }
 }
 
