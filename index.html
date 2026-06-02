@@ -311,25 +311,15 @@
 
 <!-- MOVIES SCREEN -->
 <div id="screen-movies" class="screen active">
-  <div class="hero" style="height:380px">
+  <div class="hero" style="height:340px">
     <div class="hero-bg"><div id="movies-hero-bg" class="hero-fallback"></div></div>
-    <div class="hero-overlay" id="movies-hero-overlay" style="background:linear-gradient(to bottom,rgba(8,15,10,.2) 0%,rgba(8,15,10,.65) 65%,var(--bg) 100%)"></div>
+    <div class="hero-overlay" style="background:linear-gradient(to bottom,rgba(8,15,10,.2) 0%,rgba(8,15,10,.65) 65%,var(--bg) 100%)"></div>
     <div class="topbar">
       <div class="logo">🎞 Film Vault</div>
-      <button id="tmdb-toggle-btn" class="btn-outline btn-sm">Connect TMDB</button>
-    </div>
-    <div id="tmdb-panel">
-      <div class="tmdb-box">
-        <p>Your TMDB key is pre-loaded. You can update it here if needed.</p>
-        <div class="tmdb-row">
-          <input id="tmdb-key-input" class="tmdb-input" type="text" placeholder="Your API key..." />
-          <button id="tmdb-key-go" class="btn-green">Go</button>
-        </div>
-      </div>
     </div>
     <div class="hero-content">
-      <div class="hero-tag">NOW SHOWING</div>
-      <h1 id="movies-hero-title" class="hero-title">Film Vault</h1>
+      <div class="hero-tag">NOW PLAYING</div>
+      <h1 id="movies-hero-title" class="hero-title">Loading...</h1>
       <div class="hero-actions">
         <span id="movies-hero-stars"></span>
         <button id="movies-hero-play" class="btn-green">▶ Watch now</button>
@@ -338,6 +328,8 @@
     </div>
   </div>
   <div class="screen-body">
+    <div id="movies-continue-section"></div>
+    <div id="movies-wl-section"></div>
     <div style="margin-bottom:1.2rem">
       <div class="search-wrap" style="position:relative">
         <span class="search-icon">🔍</span>
@@ -346,11 +338,8 @@
         <div id="movies-search-dropdown" class="search-dropdown"></div>
       </div>
     </div>
-    <div id="movies-continue-section"></div>
-    <div id="movies-wl-section"></div>
-    <div id="movies-section-label" class="section-label">PUBLIC DOMAIN · 6 films</div>
+    <div id="movies-section-label" class="section-label"></div>
     <div id="movies-grid" class="movie-grid"></div>
-    <div id="movies-api-hint" class="api-hint"><p>Add your free <strong style="color:var(--green-dim)">OMDb API key</strong> for real posters + search. Get one free at <a href="https://www.omdbapi.com/apikey.aspx" target="_blank">omdbapi.com →</a></p></div>
   </div>
 </div>
 
@@ -628,7 +617,7 @@ function showPosterHTML(img, title, id) {
 }
 
 function progressBarHTML(id) {
-  const p = state.progressMap[id];
+  const p = state.progressMap[String(id)];
   if (!p) return '';
   return `<div class="progress-bar"><div class="progress-fill" style="width:${p}%"></div></div>`;
 }
@@ -654,158 +643,92 @@ function switchTab(tab) {
   if (tab === 'continue') renderContinue();
 }
 
-// ════════════════════════════════════════════════════════════════
-//  OMDB CONNECT
-// ════════════════════════════════════════════════════════════════
-document.getElementById('tmdb-toggle-btn').addEventListener('click', () => {
-  document.getElementById('tmdb-panel').classList.toggle('visible');
-});
-document.getElementById('tmdb-key-go').addEventListener('click', () => {
-  const key = document.getElementById('tmdb-key-input').value.trim();
-  if (!key) return;
-  state.omdbKey = key;
-  document.getElementById('tmdb-panel').classList.remove('visible');
-  document.getElementById('tmdb-toggle-btn').textContent = '✓ TMDB on';
-  document.getElementById('tmdb-toggle-btn').style.color = 'var(--green)';
-  document.getElementById('tmdb-toggle-btn').style.borderColor = 'rgba(74,180,100,.3)';
-  document.getElementById('movies-search').disabled = false;
-  document.getElementById('movies-search').placeholder = 'search movies...';
-  document.getElementById('movies-api-hint').style.display = 'none';
-  loadPopularMovies();
-});
-document.getElementById('tmdb-key-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('tmdb-key-go').click();
-});
+// TMDB key is baked in — no connect panel needed
 
 // ════════════════════════════════════════════════════════════════
-//  MOVIES — DATA  (all powered by TMDB)
+//  MOVIES — static list, posters from TMDB image CDN
+//  IMDb IDs baked in so 2embed / VidSrc work immediately
 // ════════════════════════════════════════════════════════════════
 
-// Convert a raw TMDB movie object to Film Vault's internal shape
-function tmdbMovie(d) {
+const CATALOG = [
+  { id:'tt1375666', tmdb:'27205',  title:'Inception',                    year:'2010', rating:8.8, genre_ids:[28,878,53], overview:'A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea into a target's mind.',         poster:'/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg', backdrop:'/s3TBrRGB1iav7gFOCNx3H31MoES.jpg' },
+  { id:'tt0468569', tmdb:'155',    title:'The Dark Knight',               year:'2008', rating:9.0, genre_ids:[28,80,18],  overview:'When the menace known as the Joker wreaks havoc on Gotham City, Batman must accept one of the greatest psychological and physical tests.',        poster:'/qJ2tW6WMUDux911r6m7haRef0WH.jpg', backdrop:'/hkBaDkMWbLaf8B1lsWsKX7Ew3Xq.jpg' },
+  { id:'tt0816692', tmdb:'157336', title:'Interstellar',                  year:'2014', rating:8.6, genre_ids:[12,18,878], overview:'A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.',                                           poster:'/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', backdrop:'/xJHokMbljvjADYdit5fK5VQsXEG.jpg' },
+  { id:'tt0110912', tmdb:'680',    title:'Pulp Fiction',                  year:'1994', rating:8.9, genre_ids:[80,18],     overview:'The lives of two mob hitmen, a boxer, a gangster and his wife intertwine in four tales of violence and redemption.',                              poster:'/d5iIlFn5s0ImszYzBPb8JPIfbXD.jpg', backdrop:'/4cDFJr4HnXN5AdPw4AKrmLlMWdO.jpg' },
+  { id:'tt0133093', tmdb:'603',    title:'The Matrix',                    year:'1999', rating:8.7, genre_ids:[28,878],    overview:'A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.',           poster:'/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg', backdrop:'/fNG7i7RqMErkcqhohV2a6cV1Ehy.jpg' },
+  { id:'tt0109830', tmdb:'13',     title:'Forrest Gump',                  year:'1994', rating:8.8, genre_ids:[35,18],     overview:'The presidencies of Kennedy and Johnson through the eyes of an Alabama man with an IQ of 75, whose only desire is to be reunited with his childhood sweetheart.', poster:'/arw2vcBveWOVZr6pxd9XTd1TdQa.jpg', backdrop:'/3h1JZGDhZ8nzxdgvkxha0qBqi05.jpg' },
+  { id:'tt0120338', tmdb:'597',    title:'Titanic',                       year:'1997', rating:7.9, genre_ids:[18,10749],  overview:'A seventeen-year-old aristocrat falls in love with a kind but poor artist aboard the luxurious, ill-fated R.M.S. Titanic.',                       poster:'/9xjZS2rlVxm8SFx8kPC3aIGCOYQ.jpg', backdrop:'/kHXEpyfl6zqn8a6YuozZUujufXf.jpg' },
+  { id:'tt0111161', tmdb:'278',    title:'The Shawshank Redemption',      year:'1994', rating:9.3, genre_ids:[18,80],     overview:'Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.',                           poster:'/lyQBXzOQSuE59IsHyhrp0qIiPAz.jpg', backdrop:'/iNh3BivHyg5sQRPP1KOkzguEX0H.jpg' },
+  { id:'tt0068646', tmdb:'238',    title:'The Godfather',                 year:'1972', rating:9.2, genre_ids:[18,80],     overview:'The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.',                              poster:'/3bhkrj58Vtu7enYsLowi0Z43Iy4.jpg', backdrop:'/tmU7GeKVybMWFButWEGl2M4GeiP.jpg' },
+  { id:'tt7286456', tmdb:'475557', title:'Joker',                         year:'2019', rating:8.4, genre_ids:[80,18],     overview:'In Gotham City, mentally troubled comedian Arthur Fleck is disregarded and mistreated by society. He then embarks on a downward spiral of revolution.', poster:'/udDclJoHjfjb8Ekgsd4FDteOkCU.jpg', backdrop:'/n6bUvigpRFqSwmPp1m2YADdbRBc.jpg' },
+  { id:'tt5753856', tmdb:'496243', title:'Parasite',                      year:'2019', rating:8.5, genre_ids:[53,18],     overview:'Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.',       poster:'/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg', backdrop:'/TU9NIjwzjoKPwQHoHshkFcQUCG.jpg' },
+  { id:'tt1160419', tmdb:'438631', title:'Dune',                          year:'2021', rating:8.0, genre_ids:[12,878],    overview:'Feature adaptation of Frank Herbert's science fiction novel about the son of a noble family entrusted with the protection of the most valuable asset in the galaxy.', poster:'/d5NXSklXo0qyIYkgV94XAgMIckC.jpg', backdrop:'/jYEW5xZkZk2WTrdbMGAPFuBqbDc.jpg' },
+  { id:'tt9362722', tmdb:'848326', title:'Spider-Man: Across the Spider-Verse', year:'2023', rating:8.7, genre_ids:[16,28,12], overview:'Miles Morales catapults across the Multiverse, where he encounters a team of Spider-People charged with protecting its very existence.',  poster:'/8Vt6mWEReuy4Of61Lnj5Xj704m8.jpg', backdrop:'/4HodYYKEIsGOdinkGi2Ucz6X9i0.jpg' },
+  { id:'tt15398776',tmdb:'872585', title:'Oppenheimer',                   year:'2023', rating:8.9, genre_ids:[18],        overview:'The story of American scientist J. Robert Oppenheimer and his role in the development of the atomic bomb during World War II.',                    poster:'/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg', backdrop:'/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg' },
+  { id:'tt1745960', tmdb:'361743', title:'Top Gun: Maverick',             year:'2022', rating:8.2, genre_ids:[28,18],     overview:'After more than thirty years of service as a top naval aviator, Pete Mitchell is where he belongs, pushing the envelope as a courageous test pilot.',  poster:'/62HCnUTHjWTObPnSC2CYlrjMEg.jpg', backdrop:'/AkB37nkCRZqB7FNxVm7aaHSlFAl.jpg' },
+  { id:'tt1877830', tmdb:'299534', title:'Avengers: Endgame',             year:'2019', rating:8.4, genre_ids:[28,12,878], overview:'After the devastating events of Infinity War, the Avengers assemble once more in order to undo Thanos' actions and restore order to the universe.', poster:'/or06FN3Dka5tukK1e9sl16pB3iy.jpg', backdrop:'/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg' },
+  { id:'tt0120737', tmdb:'120',    title:'The Lord of the Rings: The Fellowship of the Ring', year:'2001', rating:8.8, genre_ids:[12,14,28], overview:'A meek Hobbit from the Shire and eight companions set out on a journey to destroy the powerful One Ring.',             poster:'/6oom5QYQ2yQTMJIbnvbkBL9cHo6.jpg', backdrop:'/pIIYdAB4NqTkHpanR2J4cNYBvtJ.jpg' },
+  { id:'tt0167260', tmdb:'122',    title:'The Lord of the Rings: The Return of the King', year:'2003', rating:9.0, genre_ids:[12,14,28], overview:'Gandalf and Aragorn lead the World of Men against Sauron's army to draw his gaze from Frodo and Sam who are heading to Mount Doom.', poster:'/rCzpDGLbOoPwLjy3OAm5NUPOTrC.jpg', backdrop:'/lXhgCODAbBXL5buk9yEmTpOoOgR.jpg' },
+  { id:'tt0245429', tmdb:'129',    title:'Spirited Away',                 year:'2001', rating:8.6, genre_ids:[16,12,14],  overview:'During her family's move to the suburbs, a sullen 10-year-old girl wanders into a world ruled by gods and spirits.',                               poster:'/39wmItIWsg5sZMyRUHLkWBcuVCM.jpg', backdrop:'/bSXfU4dwZyBA1vMmXvejdRXBvuF.jpg' },
+  { id:'tt0114709', tmdb:'862',    title:'Toy Story',                     year:'1995', rating:8.3, genre_ids:[16,12,35],  overview:'A cowboy doll is profoundly threatened and jealous when a new spaceman figure supplants him as top toy in a boy's room.',                        poster:'/uXDfjJbdP4ijW5hWSBrPl9KaI9M.jpg', backdrop:'/H8D3X39QSlMpzBRpF1j0FoHspQ.jpg' },
+];
+
+function makeCatalogMovie(d) {
   return {
-    id:           String(d.id),
-    title:        d.title || d.name || 'Untitled',
-    release_date: d.release_date || d.first_air_date || '',
-    vote_average: d.vote_average || 0,
-    overview:     d.overview || '',
-    poster_path:  d.poster_path   ? `https://image.tmdb.org/t/p/w500${d.poster_path}`   : null,
-    backdrop_path:d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null,
-    genre_ids:    d.genre_ids || [],
-    imdb_id:      d.imdb_id || null,   // filled later by detail fetch
-    archive_id:   null,
-    tmdb_id:      d.id,
+    id:            d.id,       // IMDb ID — works directly with 2embed/VidSrc
+    title:         d.title,
+    release_date:  d.year + '-01-01',
+    vote_average:  d.rating,
+    overview:      d.overview,
+    poster_path:   `https://image.tmdb.org/t/p/w500${d.poster}`,
+    backdrop_path: `https://image.tmdb.org/t/p/w1280${d.backdrop}`,
+    genre_ids:     d.genre_ids,
+    imdb_id:       d.id,       // already an IMDb ID
+    archive_id:    null,
+    tmdb_id:       d.tmdb,
+    _type:         'movie',
   };
 }
 
-// Fetch IMDb ID for a movie (needed for embed sources) — called lazily
-async function fetchImdbId(tmdbId) {
-  try {
-    const r = await fetch(`${TMDB_BASE}/movie/${tmdbId}/external_ids?api_key=${TMDB_KEY}`);
-    const d = await r.json();
-    return d.imdb_id || null;
-  } catch { return null; }
+// no fetch needed — IMDb ID is already in catalog
+async function fetchImdbId(tmdbId) { return null; }
+
+function loadPopularMovies() {
+  state.movies = CATALOG.map(makeCatalogMovie);
+  state.movieCache = state.movieCache || {};
+  state.movies.forEach(m => { state.movieCache[m.id] = m; });
+  renderMovies();
 }
 
-async function loadPopularMovies() {
-  showMoviesSpin(true);
-  try {
-    // Use TMDB trending/all/day for a great mixed popular list
-    const [trendRes, popRes, topRes] = await Promise.all([
-      fetch(`${TMDB_BASE}/trending/all/day?api_key=${TMDB_KEY}`).then(r=>r.json()),
-      fetch(`${TMDB_BASE}/movie/popular?api_key=${TMDB_KEY}`).then(r=>r.json()),
-      fetch(`${TMDB_BASE}/movie/top_rated?api_key=${TMDB_KEY}`).then(r=>r.json()),
-    ]);
-    // Mix trending movies + popular + top rated, deduplicate
-    const seen = new Set();
-    const movies = [];
-    const all = [
-      ...(trendRes.results||[]).filter(d=>d.media_type==='movie'||d.title),
-      ...(popRes.results||[]),
-      ...(topRes.results||[]),
-    ];
-    for (const d of all) {
-      if (!d.title && !d.name) continue;
-      if (seen.has(d.id)) continue;
-      seen.add(d.id);
-      movies.push(tmdbMovie(d));
-      if (movies.length >= 20) break;
-    }
-    if (movies.length) {
-      state.movies = movies;
-      state.movieCache = state.movieCache || {};
-      movies.forEach(m => { state.movieCache[m.id] = m; });
-      renderMovies();
-    }
-  } catch(e) { console.error('loadPopularMovies', e); }
-  showMoviesSpin(false);
-}
-
-async function searchMovies(q) {
+function searchMovies(q) {
   if (!q.trim()) return;
-  showMoviesSpin(true);
   const dd = document.getElementById('movies-search-dropdown');
-  try {
-    // /search/multi searches movies, TV shows & people all at once
-    const res = await fetch(`${TMDB_BASE}/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&include_adult=false`);
-    const data = await res.json();
-    const results = (data.results || [])
-      .filter(d => d.media_type === 'movie' || d.media_type === 'tv')
-      .slice(0, 12);
-
-    state.movieCache = state.movieCache || {};
-    state.showCache  = state.showCache  || {};
-
-    if (results.length) {
-      const items = results.map(d => {
-        if (d.media_type === 'movie') {
-          const m = tmdbMovie(d);
-          state.movieCache[m.id] = m;
-          return { ...m, _type: 'movie' };
-        } else {
-          const s = tmdbShowToState(d);
-          state.showCache[s.id] = s;
-          return { ...s, _type: 'show' };
-        }
-      });
-      renderDropdown(dd, items);
-    } else {
-      dd.innerHTML = '<div class="search-drop-empty">no results found</div>';
-      dd.classList.add('open');
-    }
-  } catch(e) {
-    dd.innerHTML = '<div class="search-drop-empty">search failed — try again</div>';
+  const term = q.toLowerCase();
+  const matches = state.movies.filter(m =>
+    m.title.toLowerCase().includes(term) ||
+    m.overview.toLowerCase().includes(term)
+  );
+  if (matches.length) {
+    renderDropdown(dd, matches.slice(0, 10));
+  } else {
+    dd.innerHTML = '<div class="search-drop-empty">no results — try another title</div>';
     dd.classList.add('open');
   }
-  showMoviesSpin(false);
 }
 
-function renderDropdown(dd, items) {
-  dd.innerHTML = items.map(item => {
-    const isShow = item._type === 'show';
-    const title  = item.title || item.name || '';
-    const year   = (item.release_date || item.premiered || '').split('-')[0] || '';
-    const poster = item.poster_path || item.image?.medium || item.image?.original;
-    const thumb  = poster
-      ? `<img class="search-drop-thumb" src="${poster.includes('tmdb')||poster.startsWith('http') ? poster.replace('w500','w92').replace('w185','w92') : poster}" alt="">`
-      : `<div class="search-drop-thumb placeholder-thumb">${title[0]||'?'}</div>`;
-    const badge  = isShow
-      ? `<span style="font-size:.6rem;background:rgba(74,180,100,.15);color:var(--green);border:1px solid rgba(74,180,100,.3);padding:.1rem .35rem;border-radius:3px;margin-left:.3rem">TV</span>`
-      : `<span style="font-size:.6rem;background:rgba(255,255,255,.06);color:var(--text-faint);border:1px solid rgba(255,255,255,.08);padding:.1rem .35rem;border-radius:3px;margin-left:.3rem">FILM</span>`;
-    const watchAction = isShow
-      ? `openShowModal('${item.id}')`
-      : `openPlayerById('${item.id}')`;
-    const rowAction = isShow
-      ? `pickSearchShow('${item.id}')`
-      : `pickSearchMovie('${item.id}')`;
-    const rating = item.vote_average || item.rating?.average || 0;
-    return `<div class="search-drop-item" onclick="${rowAction}">
+function renderDropdown(dd, movies) {
+  dd.innerHTML = movies.map(m => {
+    const year  = m.release_date?.split('-')[0] || '';
+    const thumb = m.poster_path
+      ? `<img class="search-drop-thumb" src="${m.poster_path.replace('w500','w92')}" alt="">`
+      : `<div class="search-drop-thumb placeholder-thumb">${(m.title||'?')[0]}</div>`;
+    return `<div class="search-drop-item" onclick="pickSearchMovie('${m.id}')">
       ${thumb}
       <div class="search-drop-info">
-        <div class="search-drop-title">${title}${badge}</div>
-        <div class="search-drop-meta">${year}${rating > 0 ? ' · ★ ' + Number(rating).toFixed(1) : ''}</div>
+        <div class="search-drop-title">${m.title}</div>
+        <div class="search-drop-meta">${year}${m.vote_average > 0 ? ' · ★ ' + m.vote_average.toFixed(1) : ''}</div>
       </div>
-      <button class="search-drop-watch" onclick="event.stopPropagation();${watchAction}">▶ Watch</button>
+      <button class="search-drop-watch" onclick="event.stopPropagation();openMovieWithImdb('${m.id}')">▶ Watch</button>
     </div>`;
   }).join('');
   dd.classList.add('open');
@@ -814,9 +737,6 @@ function renderDropdown(dd, items) {
 function pickSearchMovie(id) {
   const movie = (state.movieCache || {})[String(id)];
   if (!movie) return;
-  // Add to grid and open detail
-  const exists = state.movies.find(m => String(m.id) === String(id));
-  if (!exists) state.movies.unshift(movie);
   closeSearchDropdown();
   document.getElementById('movies-search').value = '';
   state.moviesSelectedId = String(id);
@@ -837,34 +757,27 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.search-wrap')) closeSearchDropdown();
 });
 
-function showMoviesSpin(v) { document.getElementById('movies-search-spin').classList.toggle('visible', v); }
+function showMoviesSpin(v) { const el = document.getElementById('movies-search-spin'); if(el) el.classList.toggle('visible', v); }
 
 document.getElementById('movies-search').addEventListener('input', e => {
   state.moviesQuery = e.target.value;
   clearTimeout(state.moviesDebounce);
-  if (!state.moviesQuery.trim()) { closeSearchDropdown(); return; }
-  state.moviesDebounce = setTimeout(() => searchMovies(state.moviesQuery), 350);
+  if (!state.moviesQuery.trim()) { closeSearchDropdown(); loadPopularMovies(); return; }
+  clearTimeout(state.moviesDebounce); searchMovies(state.moviesQuery);
 });
 
 // ════════════════════════════════════════════════════════════════
 //  MOVIES — RENDER
 // ════════════════════════════════════════════════════════════════
-function updateMoviesSectionLabel() {
-  const q = state.moviesQuery.toUpperCase();
-  const count = state.movies.length;
-  const label = state.omdbKey ? (q ? `RESULTS · "${q}"` : 'POPULAR NOW') : 'PUBLIC DOMAIN';
-  document.getElementById('movies-section-label').textContent = `${label} · ${count} films`;
-}
-
 function renderMoviesHero() {
   const m = state.movies[state.moviesFeaturedIdx] || state.movies[0];
   if (!m) return;
   const bg = document.getElementById('movies-hero-bg');
-  if (m.backdrop_path) {
-    bg.outerHTML; // replaced below
-    document.getElementById('movies-hero-bg').replaceWith(Object.assign(document.createElement('img'), {
-      src: m.backdrop_path, style: 'width:100%;height:100%;object-fit:cover;opacity:.18'
-    }));
+  if (m.backdrop_path && bg) {
+    const img = document.createElement('img');
+    img.src = m.backdrop_path;
+    img.style = 'width:100%;height:100%;object-fit:cover;opacity:.18';
+    bg.replaceWith(img);
   }
   document.getElementById('movies-hero-title').textContent = m.title;
   document.getElementById('movies-hero-stars').innerHTML = m.vote_average > 0 ? starsHTML(m.vote_average) : '';
@@ -872,12 +785,14 @@ function renderMoviesHero() {
   const saved = wlSaved(m.id, 'movie');
   wlBtn.textContent = saved ? '✓ Saved' : '+ Watch Later';
   wlBtn.className = 'btn-outline' + (saved ? ' saved' : '');
-  document.getElementById('movies-hero-play').onclick = () => {
-    state.movieCache = state.movieCache || {};
-    state.movieCache[String(m.id)] = m;
-    openPlayer(m);
-  };
-  document.getElementById('movies-hero-wl').onclick = () => { toggleMovieWL(m); renderMoviesHero(); };
+  document.getElementById('movies-hero-play').onclick = () => openMovieWithImdb(String(m.id));
+  document.getElementById('movies-hero-wl').onclick   = () => { toggleMovieWL(m); renderMoviesHero(); };
+}
+
+function updateMoviesSectionLabel() {
+  const q = (state.moviesQuery || '').toUpperCase();
+  document.getElementById('movies-section-label').textContent =
+    q ? `RESULTS · "${q}" · ${state.movies.length}` : `POPULAR · ${state.movies.length} films`;
 }
 
 function movieCardHTML(m, selectedId) {
@@ -953,7 +868,6 @@ function renderMovies() {
   renderMoviesHero();
   renderMoviesContinueRow();
   renderMoviesWLRow();
-
   const grid = document.getElementById('movies-grid');
   let html = '';
   state.movies.forEach(m => {
@@ -986,7 +900,7 @@ function renderMoviesContinueRow() {
     <div class="h-row">${cont.map(m => `
       <div class="h-card-wrap">
         ${miniMovieCard(m)}
-        <button class="remove-btn" onclick="removeContinue(${m.id})">✕</button>
+        <button class="remove-btn" onclick="removeContinue('${String(m.id)}')">✕</button>
       </div>`).join('')}
     </div>
   </div>`;
@@ -1040,15 +954,9 @@ function openPlayerById(id) {
   if (movie) openPlayer(movie);
 }
 
-async function openMovieWithImdb(id) {
+function openMovieWithImdb(id) {
   const movie = (state.movieCache || {})[String(id)] || state.movies.find(m => String(m.id) === String(id));
-  if (!movie) return;
-  // Fetch IMDb ID if we don't have it yet (needed for 2embed/vidsrc)
-  if (!movie.imdb_id && movie.tmdb_id) {
-    movie.imdb_id = await fetchImdbId(movie.tmdb_id);
-    if (state.movieCache) state.movieCache[String(id)] = movie;
-  }
-  openPlayer(movie);
+  if (movie) openPlayer(movie);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1062,17 +970,27 @@ function removeContinue(id) {
 }
 
 function updateProgress(movieId, pct) {
+  movieId = String(movieId);
   state.progressMap[movieId] = pct;
   saveProgress();
   if (pct > 5 && pct < 95) {
-    const exists = state.continueWatching.find(i => i.id === movieId && i.type === 'movie');
+    const exists = state.continueWatching.find(i => String(i.id) === movieId && i.type === 'movie');
     if (!exists) {
-      const m = state.movies.find(m => m.id === movieId) || DEMO_MOVIES.find(m => m.id === movieId);
-      if (m) { state.continueWatching.unshift({ ...m, type: 'movie' }); state.continueWatching = state.continueWatching.slice(0,10); saveContinue(); }
+      // Look in movieCache first (TMDB movies live here), then state.movies, then DEMO_MOVIES
+      const m = (state.movieCache || {})[movieId]
+             || state.movies.find(m => String(m.id) === movieId)
+             || DEMO_MOVIES.find(m => String(m.id) === movieId);
+      if (m) {
+        state.continueWatching.unshift({ ...m, type: 'movie' });
+        state.continueWatching = state.continueWatching.slice(0, 10);
+        saveContinue();
+      }
     }
   } else if (pct >= 95) {
-    state.continueWatching = state.continueWatching.filter(i => !(i.id === movieId && i.type === 'movie'));
+    state.continueWatching = state.continueWatching.filter(i => !(String(i.id) === movieId && i.type === 'movie'));
     saveContinue();
+    delete state.progressMap[movieId];
+    saveProgress();
   }
 }
 
@@ -1440,7 +1358,7 @@ function renderContinue() {
     <div class="movie-grid">${movies.map(m => `
       <div style="position:relative">
         ${savedMovieCard(m)}
-        <button class="remove-btn" onclick="removeContinue(${m.id})">✕</button>
+        <button class="remove-btn" onclick="removeContinue('${String(m.id)}')">✕</button>
       </div>`).join('')}
     </div>`;
 }
@@ -1504,6 +1422,22 @@ function injectIframe(url) {
   iframe.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
   iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;';
   wrap.appendChild(iframe);
+  // iframes can't track time — add to continue watching after 5s of open
+  const movie = state.currentPlayer;
+  if (movie && !movie.is_episode) {
+    setTimeout(() => {
+      const id = String(movie.id);
+      const exists = state.continueWatching.find(i => String(i.id) === id && i.type === 'movie');
+      if (!exists) {
+        const m = (state.movieCache||{})[id] || movie;
+        state.continueWatching.unshift({ ...m, type: 'movie' });
+        state.continueWatching = state.continueWatching.slice(0, 10);
+        saveContinue();
+        state.progressMap[id] = state.progressMap[id] || 10;
+        saveProgress();
+      }
+    }, 5000);
+  }
 }
 
 function loadEpisodeInPlayer(ep) {
@@ -1595,7 +1529,7 @@ function startFeaturedRotation() {
   clearInterval(state.featuredInterval);
   state.featuredInterval = setInterval(() => {
     state.moviesFeaturedIdx = (state.moviesFeaturedIdx + 1) % Math.min(state.movies.length, 5);
-    renderMoviesHero();
+    if (state.movies.length) renderMoviesHero();
   }, 5000);
 }
 
@@ -1651,8 +1585,8 @@ function updateToggleDot() {
 async function checkTVmaze() {
   setPill('tvmaze', 'checking');
   try {
-    const res = await fetch(`https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_KEY}`, { signal: AbortSignal.timeout(5000) });
-    const d = await res.json(); setPill('tvmaze', d.results ? 'ok' : 'error');
+    const res = await fetch('https://api.tvmaze.com/shows/1', { signal: AbortSignal.timeout(5000) });
+    setPill('tvmaze', res.ok ? 'ok' : 'error');
   } catch { setPill('tvmaze', 'error'); }
 }
 
@@ -1685,9 +1619,9 @@ async function checkTMDB(key) {
   if (!key) { setPill('tmdb', 'na'); return; }
   setPill('tmdb', 'checking');
   try {
-    const res = await fetch(`${TMDB_BASE}/configuration?api_key=${key}`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${TMDB_BASE}/movie/popular?api_key=${key}`, { signal: AbortSignal.timeout(5000) });
     const data = await res.json();
-    setPill('tmdb', data.images ? 'ok' : 'error');
+    setPill('tmdb', data.results ? 'ok' : 'error');
   } catch { setPill('tmdb', 'error'); }
 }
 
@@ -1699,15 +1633,10 @@ async function runAllChecks(tmdbKey) {
   if (hasError && !statusBarVisible) toggleStatusBar();
 }
 
-// Hook into OMDb connect to recheck
-const _origTmdbGo = document.getElementById('tmdb-key-go').onclick;
-document.getElementById('tmdb-key-go').addEventListener('click', () => {
-  const key = document.getElementById('tmdb-key-input').value.trim();
-  if (key) setTimeout(() => checkTMDB(key), 800);
-});
+// TMDB key is baked in — no connect panel in DOM
 
 // Run on load
-setTimeout(() => runAllChecks(state.omdbKey), 1200);
+setTimeout(() => runAllChecks(TMDB_KEY), 1200);
 </script>
 </body>
 </html>
